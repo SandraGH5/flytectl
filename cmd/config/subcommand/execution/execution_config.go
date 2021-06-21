@@ -4,7 +4,7 @@ import (
 	"github.com/flyteorg/flytectl/pkg/filters"
 )
 
-//go:generate pflags Config --default-var DefaultConfig
+//go:generate pflags Config --default-var DefaultConfig --bind-default-var
 var (
 	DefaultConfig = &Config{
 		Filter: filters.DefaultFilter,
@@ -14,4 +14,5 @@ var (
 // Config
 type Config struct {
 	Filter filters.Filters `json:"filter" pflag:","`
+	Details bool `json:"details" pflag:",gets node execution details."`
 }

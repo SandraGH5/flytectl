@@ -2,6 +2,8 @@ package get
 
 import (
 	"context"
+	"fmt"
+	"github.com/disiqueira/gotree"
 
 	"github.com/flyteorg/flytectl/cmd/config"
 	"github.com/flyteorg/flytectl/cmd/config/subcommand/execution"
@@ -86,6 +88,26 @@ func getExecutionFunc(ctx context.Context, args []string, cmdCtx cmdCore.Command
 		}
 		executions = append(executions, exec)
 		logger.Infof(ctx, "Retrieved %v executions", len(executions))
+
+		if execution.DefaultConfig.Details {
+			// Fetching Node execution details
+			nExec, err := cmdCtx.AdminFetcherExt().FetchNodeExecutionDetails(ctx, name, config.GetConfig().Project, config.GetConfig().Domain)
+			if err != nil {
+				return err
+			}
+			logger.Infof(ctx, "Retrieved %v node executions", len(nExec.NodeExecutions))
+			treeViewExec := gotree.New("Executions")
+			for _,nodeExec := range nExec.NodeExecutions {
+				nExecId := treeViewExec.Add(nodeExec.Id.NodeId)
+				nExecPhase := nExecId.Add("Status :" + nodeExec.Closure.Phase.String())
+				nExecPhase.Add("Started :" + nodeExec.Closure.StartedAt.String())
+				nExecPhase.Add("Duration :" + nodeExec.Closure.Duration.String())
+				nExecPhase.Add("Input :" + nodeExec.InputUri)
+				nExecPhase.Add("Output :" + nodeExec.Closure.GetOutputUri())
+			}
+			fmt.Println(treeViewExec.Print())
+			return nil
+		}
 		return adminPrinter.Print(config.GetConfig().MustOutputFormat(), executionColumns,
 			ExecutionToProtoMessages(executions)...)
 	}

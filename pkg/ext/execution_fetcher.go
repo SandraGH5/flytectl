@@ -23,6 +23,21 @@ func (a *AdminFetcherExtClient) FetchExecution(ctx context.Context, name, projec
 	return e, nil
 }
 
+func (a *AdminFetcherExtClient) FetchNodeExecutionDetails(ctx context.Context, name, project, domain string) (*admin.NodeExecutionList, error) {
+	e, err := a.AdminServiceClient().ListNodeExecutions(ctx, &admin.NodeExecutionListRequest{
+		WorkflowExecutionId : &core.WorkflowExecutionIdentifier{
+			Project: project,
+			Domain:  domain,
+			Name:    name,
+		},
+		Limit: 100,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
 func (a *AdminFetcherExtClient) ListExecution(ctx context.Context, project, domain string, filter filters.Filters) (*admin.ExecutionList, error) {
 	transformFilters, err := filters.BuildResourceListRequestWithName(filter, project, domain, "")
 	if err != nil {

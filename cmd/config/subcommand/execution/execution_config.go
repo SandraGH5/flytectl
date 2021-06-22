@@ -13,6 +13,7 @@ var (
 
 // Config
 type Config struct {
-	Filter filters.Filters `json:"filter" pflag:","`
-	Details bool `json:"details" pflag:",gets node execution details."`
+	Filter      filters.Filters `json:"filter" pflag:","`
+	Details     bool            `json:"details" pflag:",gets node execution details. Only applicable for single execution name i.e get execution name --details"`
+	DefaultView bool            `json:"defaultView" pflag:",gets default view of node executions(table,json,yaml). Only applicable with --details"`
 }

@@ -24,7 +24,7 @@ func (a *AdminFetcherExtClient) FetchExecution(ctx context.Context, name, projec
 }
 
 func (a *AdminFetcherExtClient) FetchNodeExecutionDetails(ctx context.Context, name, project, domain string) (*admin.NodeExecutionList, error) {
-	e, err := a.AdminServiceClient().ListNodeExecutions(ctx, &admin.NodeExecutionListRequest{
+	ne, err := a.AdminServiceClient().ListNodeExecutions(ctx, &admin.NodeExecutionListRequest{
 		WorkflowExecutionId : &core.WorkflowExecutionIdentifier{
 			Project: project,
 			Domain:  domain,
@@ -35,7 +35,25 @@ func (a *AdminFetcherExtClient) FetchNodeExecutionDetails(ctx context.Context, n
 	if err != nil {
 		return nil, err
 	}
-	return e, nil
+	return ne, nil
+}
+
+func (a *AdminFetcherExtClient) FetchTaskExecutionsOnNode(ctx context.Context, nodeId, execName, project, domain string) (*admin.TaskExecutionList, error) {
+	te, err := a.AdminServiceClient().ListTaskExecutions(ctx, &admin.TaskExecutionListRequest{
+		NodeExecutionId : &core.NodeExecutionIdentifier{
+			NodeId: nodeId,
+			ExecutionId: &core.WorkflowExecutionIdentifier{
+				Project: project,
+				Domain:  domain,
+				Name:    execName,
+			},
+		},
+		Limit: 100,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return te, nil
 }
 
 func (a *AdminFetcherExtClient) ListExecution(ctx context.Context, project, domain string, filter filters.Filters) (*admin.ExecutionList, error) {

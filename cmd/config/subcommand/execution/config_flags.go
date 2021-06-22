@@ -54,6 +54,7 @@ func (cfg Config) GetPFlagSet(prefix string) *pflag.FlagSet {
 	cmdFlags.StringVar(&DefaultConfig.Filter.SortBy, fmt.Sprintf("%v%v", prefix, "filter.sort-by"), DefaultConfig.Filter.SortBy, "Specifies which field to sort results ")
 	cmdFlags.Int32Var(&DefaultConfig.Filter.Limit, fmt.Sprintf("%v%v", prefix, "filter.limit"), DefaultConfig.Filter.Limit, "Specifies the limit")
 	cmdFlags.BoolVar(&DefaultConfig.Filter.Asc, fmt.Sprintf("%v%v", prefix, "filter.asc"), DefaultConfig.Filter.Asc, "Specifies the sorting order. By default flytectl sort result in descending order")
-	cmdFlags.BoolVar(&DefaultConfig.Details, fmt.Sprintf("%v%v", prefix, "details"), DefaultConfig.Details, "gets node execution details.")
+	cmdFlags.BoolVar(&DefaultConfig.Details, fmt.Sprintf("%v%v", prefix, "details"), DefaultConfig.Details, "gets node execution details. Only applicable for single execution name i.e get execution name --details")
+	cmdFlags.BoolVar(&DefaultConfig.DefaultView, fmt.Sprintf("%v%v", prefix, "defaultView"), DefaultConfig.DefaultView, "gets default view of node executions(table, json, yaml). Only applicable with --details")
 	return cmdFlags
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/disiqueira/gotree"
+	"sort"
+	"strconv"
 
 	"github.com/flyteorg/flytectl/cmd/config"
 	"github.com/flyteorg/flytectl/cmd/config/subcommand/execution"
@@ -69,7 +71,25 @@ var executionColumns = []printer.Column{
 	{Header: "Error data (Trunc)", JSONPath: "$.closure.error[\"message\"]", TruncateTo: &hundredChars},
 }
 
+
+var nodeExecutionColumns = []printer.Column{
+	{Header: "Name", JSONPath: "$.id.nodeId"},
+	{Header: "Exec", JSONPath: "$.id.executionId.name"},
+	{Header: "StartedAt", JSONPath: "$.closure.startedAt"},
+	{Header: "Duration", JSONPath: "$.closure.duration"},
+	{Header: "Started", JSONPath: "$.closure.startedAt"},
+	{Header: "Phase", JSONPath: "$.closure.phase"},
+}
+
 func ExecutionToProtoMessages(l []*admin.Execution) []proto.Message {
+	messages := make([]proto.Message, 0, len(l))
+	for _, m := range l {
+		messages = append(messages, m)
+	}
+	return messages
+}
+
+func NodeExecutionToProtoMessages(l []*admin.NodeExecution) []proto.Message {
 	messages := make([]proto.Message, 0, len(l))
 	for _, m := range l {
 		messages = append(messages, m)
@@ -91,22 +111,17 @@ func getExecutionFunc(ctx context.Context, args []string, cmdCtx cmdCore.Command
 
 		if execution.DefaultConfig.Details {
 			// Fetching Node execution details
-			nExec, err := cmdCtx.AdminFetcherExt().FetchNodeExecutionDetails(ctx, name, config.GetConfig().Project, config.GetConfig().Domain)
+			nExecDetails, nodeExecToTaskExec, err := getNodeExecDetailsWithTasks(ctx, config.GetConfig().Project, config.GetConfig().Domain, name, cmdCtx)
 			if err != nil {
 				return err
 			}
-			logger.Infof(ctx, "Retrieved %v node executions", len(nExec.NodeExecutions))
-			treeViewExec := gotree.New("Executions")
-			for _,nodeExec := range nExec.NodeExecutions {
-				nExecId := treeViewExec.Add(nodeExec.Id.NodeId)
-				nExecPhase := nExecId.Add("Status :" + nodeExec.Closure.Phase.String())
-				nExecPhase.Add("Started :" + nodeExec.Closure.StartedAt.String())
-				nExecPhase.Add("Duration :" + nodeExec.Closure.Duration.String())
-				nExecPhase.Add("Input :" + nodeExec.InputUri)
-				nExecPhase.Add("Output :" + nodeExec.Closure.GetOutputUri())
+			if !execution.DefaultConfig.DefaultView {
+				// Print tree view
+				printNodeDetailsTreeView(nExecDetails, nodeExecToTaskExec)
+				return nil
 			}
-			fmt.Println(treeViewExec.Print())
-			return nil
+			return adminPrinter.Print(config.GetConfig().MustOutputFormat(), nodeExecutionColumns,
+				NodeExecutionToProtoMessages(nExecDetails)...)
 		}
 		return adminPrinter.Print(config.GetConfig().MustOutputFormat(), executionColumns,
 			ExecutionToProtoMessages(executions)...)
@@ -118,4 +133,76 @@ func getExecutionFunc(ctx context.Context, args []string, cmdCtx cmdCore.Command
 	logger.Infof(ctx, "Retrieved %v executions", len(executionList.Executions))
 	return adminPrinter.Print(config.GetConfig().MustOutputFormat(), executionColumns,
 		ExecutionToProtoMessages(executionList.Executions)...)
+}
+
+func getNodeExecDetailsWithTasks(ctx context.Context, project, domain, name string, cmdCtx cmdCore.CommandContext)(
+	[]*admin.NodeExecution, map[string]*admin.TaskExecutionList, error) {
+	// Fetching Node execution details
+	nExecDetails, err := cmdCtx.AdminFetcherExt().FetchNodeExecutionDetails(ctx, name, project, domain)
+	if err != nil {
+		return nil, nil, err
+	}
+	logger.Infof(ctx, "Retrieved %v node executions", len(nExecDetails.NodeExecutions))
+
+	// Mapping node execution id to task list
+	nodeExecToTaskExec := map[string]*admin.TaskExecutionList{}
+	for _,nodeExec := range nExecDetails.NodeExecutions {
+		nodeExecToTaskExec[nodeExec.Id.NodeId], err = cmdCtx.AdminFetcherExt().FetchTaskExecutionsOnNode(ctx,
+			nodeExec.Id.NodeId, name, project, domain)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return nExecDetails.NodeExecutions, nodeExecToTaskExec, nil
+}
+
+func printNodeDetailsTreeView(nodeExecutions []*admin.NodeExecution, nodeExecToTaskExec map[string]*admin.TaskExecutionList) {
+	treeViewExec := gotree.New("Node Executions")
+	for _,nodeExec := range nodeExecutions {
+		nExecPhaseView := treeViewExec.Add(nodeExec.Id.NodeId+" - "+ nodeExec.Closure.Phase.String() +
+			" - " + nodeExec.Closure.StartedAt.AsTime().String() +
+			" - " + nodeExec.Closure.StartedAt.AsTime().
+			Add(nodeExec.Closure.Duration.AsDuration()).String())
+		taskExecs := nodeExecToTaskExec[nodeExec.Id.NodeId]
+		if taskExecs != nil && len(taskExecs.TaskExecutions) > 0 {
+			sort.Slice(taskExecs.TaskExecutions[:], func(i, j int) bool {
+				return taskExecs.TaskExecutions[i].Id.RetryAttempt < taskExecs.TaskExecutions[j].Id.RetryAttempt
+			})
+			for _, taskExec := range taskExecs.TaskExecutions {
+				attemptView := nExecPhaseView.Add("Attempt :" + strconv.Itoa(int(taskExec.Id.RetryAttempt)))
+				attemptView.Add("Task - " + taskExec.Closure.Phase.String() +
+					" - " + taskExec.Closure.StartedAt.AsTime().String() +
+					" - " + taskExec.Closure.StartedAt.AsTime().
+					Add(taskExec.Closure.Duration.AsDuration()).String())
+				attemptView.Add("Task Type - " + taskExec.Closure.TaskType)
+				attemptView.Add("Reason - " + taskExec.Closure.Reason)
+				if  taskExec.Closure.Metadata != nil {
+					metadata := attemptView.Add("Metadata")
+					metadata.Add("Generated Name : " + taskExec.Closure.Metadata.GeneratedName)
+					metadata.Add("Plugin Identifier : " + taskExec.Closure.Metadata.PluginIdentifier)
+					extResourcesView := metadata.Add("External Resources")
+					for _, extResource := range taskExec.Closure.Metadata.ExternalResources {
+						extResourcesView.Add("Ext Resource : " + extResource.ExternalId)
+					}
+					resourcePoolInfoView := metadata.Add("Resource Pool Info")
+					for _, rsPool := range taskExec.Closure.Metadata.ResourcePoolInfo {
+						resourcePoolInfoView.Add("Ext Resource : " + rsPool.Namespace)
+						resourcePoolInfoView.Add("Ext Resource : " + rsPool.AllocationToken)
+					}
+				}
+
+
+				sort.Slice(taskExec.Closure.Logs[:], func(i, j int) bool {
+					return taskExec.Closure.Logs[i].Name < taskExec.Closure.Logs[j].Name
+				})
+
+				logsView := attemptView.Add("Logs :")
+				for _, logData := range taskExec.Closure.Logs {
+					logsView.Add("Name :" + logData.Name)
+					logsView.Add("URI :" + logData.Uri)
+				}
+			}
+		}
+	}
+	fmt.Println(treeViewExec.Print())
 }
